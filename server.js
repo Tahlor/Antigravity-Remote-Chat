@@ -112,19 +112,32 @@ async function connectCDP(url) {
 
 async function extractMetadata(cdp) {
     const SCRIPT = `(() => {
-        const cascade = document.getElementById('cascade');
-        if (!cascade) return { found: false };
-        
+        // Try to find a reasonable "root" for the chat UI.
+        // Older Antigravity builds used #cascade as the root; newer ones may not.
+        const roots = [
+            document.getElementById('cascade'),
+            document.querySelector('[id*="cascade"]'),
+            document.querySelector('[data-testid*="chat"]'),
+            document.querySelector('main'),
+            document.body
+        ];
+        const root = roots.find(Boolean);
+        if (!root) return { found: false };
+
         let chatTitle = null;
         const possibleTitleSelectors = ['h1', 'h2', 'header', '[class*="title"]'];
         for (const sel of possibleTitleSelectors) {
             const el = document.querySelector(sel);
-            if (el && el.textContent.length > 2 && el.textContent.length < 50) {
+            if (el && el.textContent && el.textContent.length > 2 && el.textContent.length < 80) {
                 chatTitle = el.textContent.trim();
                 break;
             }
         }
-        
+
+        if (!chatTitle && document.title && document.title.length > 0) {
+            chatTitle = document.title;
+        }
+
         return {
             found: true,
             chatTitle: chatTitle || 'Agent',
@@ -186,14 +199,30 @@ async function captureCSS(cdp) {
 
 async function captureHTML(cdp) {
     const SCRIPT = `(() => {
-        const cascade = document.getElementById('cascade');
-        if (!cascade) return { error: 'cascade not found' };
-        
-        const clone = cascade.cloneNode(true);
-        // Remove input box to keep snapshot clean
-        const input = clone.querySelector('[contenteditable="true"]')?.closest('div[id^="cascade"] > div');
-        if (input) input.remove();
-        
+        // Try to find the main chat container; fall back gracefully if #cascade is missing.
+        const roots = [
+            document.getElementById('cascade'),
+            document.querySelector('[id*="cascade"]'),
+            document.querySelector('[data-testid*="chat"]'),
+            document.querySelector('main'),
+            document.body
+        ];
+        const root = roots.find(Boolean);
+        if (!root) return { error: 'root not found' };
+
+        const clone = root.cloneNode(true);
+
+        // Remove the primary input area to keep snapshot clean.
+        const editable = clone.querySelector('[contenteditable="true"]');
+        if (editable) {
+            const container = editable.closest('form, [role="textbox"], div');
+            if (container && container !== clone) {
+                container.remove();
+            } else {
+                editable.remove();
+            }
+        }
+
         const bodyStyles = window.getComputedStyle(document.body);
 
         return {
