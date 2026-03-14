@@ -231,24 +231,37 @@
                     const qData = await qRes.json();
                     let html = '';
                     if (qData.tokenUsage) {
-                        html += '<div style="display:flex; gap:16px; margin-bottom:16px;">';
+                        html += '<div style="display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap;">';
                         if (qData.tokenUsage.promptCredits) {
-                            html += `<div style="background:#2a2a2a; padding:12px; border-radius:8px; flex:1;">
+                            html += `<div style="background:#2a2a2a; padding:12px; border-radius:8px; flex:1; min-width:140px;">
                                 <div style="font-size:12px; color:#888;">Prompt Credits</div>
                                 <div style="font-size:20px; font-weight:bold; color:white;">${qData.tokenUsage.promptCredits.available} / ${qData.tokenUsage.promptCredits.monthly}</div>
                             </div>`;
                         }
                         if (qData.tokenUsage.flowCredits) {
-                            html += `<div style="background:#2a2a2a; padding:12px; border-radius:8px; flex:1;">
+                            html += `<div style="background:#2a2a2a; padding:12px; border-radius:8px; flex:1; min-width:140px;">
                                 <div style="font-size:12px; color:#888;">Flow Credits</div>
                                 <div style="font-size:20px; font-weight:bold; color:white;">${qData.tokenUsage.flowCredits.available} / ${qData.tokenUsage.flowCredits.monthly}</div>
+                            </div>`;
+                        }
+                        if (qData.tokenUsage.weeklyUsage) {
+                            const w = qData.tokenUsage.weeklyUsage;
+                            const barColor = w.remainingPct > 20 ? '#3b82f6' : w.remainingPct > 5 ? '#f59e0b' : '#ef4444';
+                            html += `<div style="background:#2a2a2a; padding:12px; border-radius:8px; flex:1; min-width:140px;">
+                                <div style="font-size:12px; color:#888;">Weekly Budget</div>
+                                <div style="font-size:20px; font-weight:bold; color:white;">${w.remaining} / ${w.limit}</div>
+                                <div style="width:100%; height:6px; background:#444; border-radius:3px; margin-top:8px; overflow:hidden;">
+                                    <div style="height:100%; width:${w.remainingPct}%; background:${barColor};"></div>
+                                </div>
+                                <small style="color:#888;">${w.used} used this week</small>
                             </div>`;
                         }
                         html += '</div>';
                     }
                     if (qData.models) {
+                        const sorted = [...qData.models].sort((a, b) => a.label.localeCompare(b.label));
                         html += '<div style="margin-top:10px; display:flex; gap:10px; overflow-x:auto;">';
-                        qData.models.forEach(m => {
+                        sorted.forEach(m => {
                             html += `<div style="background:#222; padding:10px; border-radius:8px; min-width:160px; border:1px solid #333;">
                                 <strong style="color:white;">${m.label}</strong><br/>
                                 <div style="width:100%; height:6px; background:#444; border-radius:3px; margin:8px 0; overflow:hidden;">

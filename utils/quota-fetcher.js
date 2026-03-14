@@ -92,6 +92,18 @@ function parseResponse(data) {
         }
     }
 
+    // Weekly quota (if present)
+    const weeklyBudget = userStatus?.planStatus?.weeklyBudget;
+    let weeklyUsage;
+    if (weeklyBudget) {
+        const limit = Number(weeklyBudget.limit || 0);
+        const used = Number(weeklyBudget.used || 0);
+        const remaining = Math.max(0, limit - used);
+        if (limit > 0) {
+            weeklyUsage = { limit, used, remaining, remainingPct: (remaining / limit) * 100 };
+        }
+    }
+
     let tokenUsage;
     if (promptCredits || flowCredits) {
         const totalAvailable = (promptCredits?.available || 0) + (flowCredits?.available || 0);
@@ -99,6 +111,7 @@ function parseResponse(data) {
         tokenUsage = {
             promptCredits,
             flowCredits,
+            weeklyUsage,
             totalAvailable,
             totalMonthly,
             overallRemainingPct: totalMonthly > 0 ? (totalAvailable / totalMonthly) * 100 : 0,
@@ -134,7 +147,8 @@ function parseResponse(data) {
                 resetTime,
                 timeUntilReset: formatTime(diff),
             };
-        });
+        })
+        .sort((a, b) => a.label.localeCompare(b.label));
 
     return { models, userInfo, tokenUsage, timestamp: new Date() };
 }
