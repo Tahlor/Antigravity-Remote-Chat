@@ -6,9 +6,13 @@ import WebSocket from 'ws';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { CacheManager } from './utils/cache-manager.js';
 import { fetchQuota } from './utils/quota-fetcher.js';
 import { findAntigravityProcess } from './utils/process-finder.js';
+
+const execAsync = promisify(exec);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -460,6 +464,7 @@ async function main() {
     });
 
     const PORT = process.env.PORT || 3000;
+    await freePort(PORT);
     server.listen(PORT, '0.0.0.0', () => {
         console.log(`🚀 Server running on port ${PORT}`);
     });
@@ -468,6 +473,38 @@ async function main() {
     discover();
     setInterval(discover, DISCOVERY_INTERVAL);
     setInterval(updateSnapshots, POLL_INTERVAL);
+}
+
+async function freePort(port) {
+    try {
+        let pids = [];
+        if (process.platform === 'win32') {
+            const { stdout } = await execAsync(
+                `powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue).OwningProcess | Sort-Object -Unique"`
+            );
+            pids = stdout.trim().split(/\r?\n/).map(s => parseInt(s.trim(), 10)).filter(n => n > 0);
+        } else {
+            const { stdout } = await execAsync(`lsof -ti tcp:${port} 2>/dev/null || true`);
+            pids = stdout.trim().split(/\r?\n/).map(s => parseInt(s.trim(), 10)).filter(n => n > 0);
+        }
+        if (pids.length === 0) return;
+        console.log(`⚡ Port ${port} in use (PID${pids.length > 1 ? 's' : ''}: ${pids.join(', ')}), rebooting...`);
+        for (const pid of pids) {
+            try {
+                if (process.platform === 'win32') {
+                    try {
+                        await execAsync(`taskkill /F /PID ${pid}`);
+                    } catch (e) {
+                        // taskkill may fail on elevated processes — try Stop-Process as fallback
+                        await execAsync(`powershell -NoProfile -Command "Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue"`);
+                    }
+                } else {
+                    process.kill(pid, 'SIGKILL');
+                }
+            } catch (e) { /* already gone */ }
+        }
+        await new Promise(r => setTimeout(r, 600)); // give OS time to release port
+    } catch (e) { /* non-fatal */ }
 }
 
 // Injection Helper (Moved down to keep main clear)
