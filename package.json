@@ -8,7 +8,8 @@
     },
     "scripts": {
         "start": "node server.js",
-        "dev": "node server.js"
+        "dev": "node server.js",
+        "postinstall": "node scripts/update-shortcuts.js"
     },
     "dependencies": {
         "ws": "^8.18.0",
