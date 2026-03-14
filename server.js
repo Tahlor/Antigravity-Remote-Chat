@@ -5,6 +5,10 @@ import http from 'http';
 import WebSocket from 'ws';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import fs from 'fs';
+import { CacheManager } from './utils/cache-manager.js';
+import { fetchQuota } from './utils/quota-fetcher.js';
+import { findAntigravityProcess } from './utils/process-finder.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -12,6 +16,17 @@ const __dirname = dirname(__filename);
 const PORTS = [9000, 9001, 9002, 9003];
 const DISCOVERY_INTERVAL = 10000;
 const POLL_INTERVAL = 3000;
+
+// Auto-Accept & Dashboard state
+let autoAcceptEnabled = false;
+let autoAcceptScriptContent = null;
+try {
+    const autoAcceptScriptPath = join(__dirname, 'scripts', 'auto-accept.js');
+    autoAcceptScriptContent = fs.readFileSync(autoAcceptScriptPath, 'utf8');
+} catch (e) {
+    console.error(`Failed to load auto-accept.js: ${e.message}`);
+}
+const cacheManager = new CacheManager();
 
 // Application State
 let cascades = new Map(); // Map<cascadeId, { id, cdp: { ws, contexts, rootContextId }, metadata, snapshot, snapshotHash }>
@@ -253,6 +268,25 @@ async function discover() {
                     snapshotHash: null
                 };
                 newCascades.set(id, cascade);
+
+                // Inject auto-accept script
+                if (autoAcceptScriptContent) {
+                    try {
+                        await cdp.call("Runtime.evaluate", {
+                            expression: autoAcceptScriptContent,
+                            contextId: cdp.rootContextId
+                        });
+                        if (autoAcceptEnabled) {
+                            await cdp.call("Runtime.evaluate", {
+                                expression: "window.__autoAcceptStart({ ide: 'antigravity' })",
+                                contextId: cdp.rootContextId
+                            });
+                        }
+                    } catch (e) {
+                         console.error('Failed to inject auto-accept logic', e);
+                    }
+                }
+
                 console.log(`✨ Added cascade: ${meta.chatTitle}`);
             } else {
                 cdp.ws.close();
@@ -341,6 +375,57 @@ async function main() {
         if (!c) return res.status(404).json({ error: 'Not found' });
         res.json({ css: c.css || '' });
     });
+
+    // --- Dashboard & Auto-Accept APIs ---
+    app.post('/api/auto-accept', async (req, res) => {
+        autoAcceptEnabled = !!req.body.enabled;
+        const script = autoAcceptEnabled ? "window.__autoAcceptStart({ ide: 'antigravity' })" : "window.__autoAcceptStop()";
+        
+        await Promise.all(Array.from(cascades.values()).map(async (c) => {
+            if (c.cdp.rootContextId) {
+                try {
+                    await c.cdp.call("Runtime.evaluate", {
+                        expression: script,
+                        contextId: c.cdp.rootContextId
+                    });
+                } catch(e) {}
+            }
+        }));
+        res.json({ success: true, enabled: autoAcceptEnabled });
+    });
+
+    app.get('/api/auto-accept/status', (req, res) => {
+        res.json({ enabled: autoAcceptEnabled });
+    });
+
+    app.get('/api/dashboard/quota', async (req, res) => {
+        try {
+            const serverInfo = await findAntigravityProcess();
+            if (!serverInfo) {
+                return res.status(503).json({ error: 'Language server not found' });
+            }
+            const quota = await fetchQuota(serverInfo.port, serverInfo.csrfToken);
+            res.json(quota);
+        } catch(e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.get('/api/dashboard/cache', async (req, res) => {
+        try {
+            const info = await cacheManager.getCacheInfo();
+            res.json({
+                brainSizeHr: (info.brainSize / (1024*1024)).toFixed(2) + ' MB',
+                conversationsSizeHr: (info.conversationsSize / (1024*1024)).toFixed(2) + ' MB',
+                totalSizeHr: (info.totalSize / (1024*1024)).toFixed(2) + ' MB',
+                brainCount: info.brainCount,
+                ...info
+            });
+        } catch(e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+    // ------------------------------------
 
     // Alias for simple single-view clients (returns first active or first available)
     app.get('/snapshot', (req, res) => {

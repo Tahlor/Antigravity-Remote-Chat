@@ -128,8 +128,36 @@
 <body>
 
     <div class="headers-container" id="tabsContainer">
-        <!-- Tabs injected here -->
-        <div class="cascade-tab">Loading...</div>
+        <div class="cascade-tab dashboard-control" onclick="toggleDashboard()" style="background:#4b5563;">
+            <span style="font-weight:bold;">📊 Dashboard</span>
+        </div>
+        <div id="dynamicTabs" style="display:flex"></div>
+    </div>
+
+    <div id="dashboardPanel" style="display:none; padding: 20px; background: #1a1a1a; flex:1; overflow-y:auto; padding-bottom:100px;">
+        <h2>Dashboard & Toolkit</h2>
+        <div style="margin-top: 24px; padding:16px; background:#2a2a2a; border-radius:12px; border:1px solid #3a3a3a;">
+           <label style="display:flex; align-items:flex-start; gap:12px; cursor:pointer;">
+             <input type="checkbox" id="autoAcceptToggle" onchange="toggleAutoAccept(this.checked)" style="width:24px; height:24px; margin-top:2px;" />
+             <div>
+                <div style="font-size:18px; font-weight:600;">Enable Agent Auto-Accept</div>
+                <div style="color:#aaa; margin-top:4px; font-size:14px; line-height:1.4;">
+                    Automatically approves agent executions, terminal commands, and file edits.
+                    Runs natively inside IDE using injected CDP scripts.
+                </div>
+             </div>
+           </label>
+        </div>
+        
+        <div style="margin-top: 32px;">
+           <h3 style="border-bottom:1px solid #333; padding-bottom:8px;">Compute Quota</h3>
+           <div id="dashboardQuota" style="margin-top:16px; color:#aaa;">Loading quota...</div>
+        </div>
+        
+        <div style="margin-top: 32px;">
+           <h3 style="border-bottom:1px solid #333; padding-bottom:8px;">Local Cache</h3>
+           <div id="dashboardCache" style="margin-top:16px; color:#aaa;">Loading cache...</div>
+        </div>
     </div>
 
     <div class="chat-container" id="chatContainer">
@@ -145,12 +173,119 @@
 
     <script>
         const tabsContainer = document.getElementById('tabsContainer');
+        const dynamicTabs = document.getElementById('dynamicTabs');
         const chatContent = document.getElementById('chatContent');
         const chatContainer = document.getElementById('chatContainer');
+        const dashboardPanel = document.getElementById('dashboardPanel');
+        const inputSection = document.querySelector('.input-section');
 
         let cascades = [];
         let currentCascadeId = null;
         let ws = null;
+        let isDashboardOpen = false;
+        let dashboardInterval = null;
+
+        function toggleDashboard() {
+            isDashboardOpen = !isDashboardOpen;
+            if (isDashboardOpen) {
+                chatContainer.style.display = 'none';
+                inputSection.style.display = 'none';
+                dashboardPanel.style.display = 'block';
+                refreshDashboard();
+                dashboardInterval = setInterval(refreshDashboard, 5000);
+            } else {
+                dashboardPanel.style.display = 'none';
+                chatContainer.style.display = 'block';
+                inputSection.style.display = 'flex';
+                if (dashboardInterval) clearInterval(dashboardInterval);
+            }
+            renderTabs();
+        }
+
+        async function fetchAutoAcceptStatus() {
+            try {
+                const res = await fetch('/api/auto-accept/status');
+                const data = await res.json();
+                document.getElementById('autoAcceptToggle').checked = data.enabled;
+            } catch(e) {}
+        }
+        
+        async function toggleAutoAccept(enabled) {
+            try {
+                await fetch('/api/auto-accept', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ enabled })
+                });
+            } catch(e) {
+                alert('Failed to toggle auto-accept');
+                document.getElementById('autoAcceptToggle').checked = !enabled;
+            }
+        }
+
+        async function refreshDashboard() {
+            fetchAutoAcceptStatus();
+            try {
+                const qRes = await fetch('/api/dashboard/quota');
+                if (qRes.ok) {
+                    const qData = await qRes.json();
+                    let html = '';
+                    if (qData.tokenUsage) {
+                        html += '<div style="display:flex; gap:16px; margin-bottom:16px;">';
+                        if (qData.tokenUsage.promptCredits) {
+                            html += `<div style="background:#2a2a2a; padding:12px; border-radius:8px; flex:1;">
+                                <div style="font-size:12px; color:#888;">Prompt Credits</div>
+                                <div style="font-size:20px; font-weight:bold; color:white;">${qData.tokenUsage.promptCredits.available} / ${qData.tokenUsage.promptCredits.monthly}</div>
+                            </div>`;
+                        }
+                        if (qData.tokenUsage.flowCredits) {
+                            html += `<div style="background:#2a2a2a; padding:12px; border-radius:8px; flex:1;">
+                                <div style="font-size:12px; color:#888;">Flow Credits</div>
+                                <div style="font-size:20px; font-weight:bold; color:white;">${qData.tokenUsage.flowCredits.available} / ${qData.tokenUsage.flowCredits.monthly}</div>
+                            </div>`;
+                        }
+                        html += '</div>';
+                    }
+                    if (qData.models) {
+                        html += '<div style="margin-top:10px; display:flex; gap:10px; overflow-x:auto;">';
+                        qData.models.forEach(m => {
+                            html += `<div style="background:#222; padding:10px; border-radius:8px; min-width:160px; border:1px solid #333;">
+                                <strong style="color:white;">${m.label}</strong><br/>
+                                <div style="width:100%; height:6px; background:#444; border-radius:3px; margin:8px 0; overflow:hidden;">
+                                    <div style="height:100%; width:${m.remainingPct}%; background:${m.isExhausted?'#ef4444':'#3b82f6'};"></div>
+                                </div>
+                                <div style="display:flex; justify-content:space-between;">
+                                    <small style="color:#aaa;">${m.remainingPct.toFixed(1)}%</small>
+                                    <small style="color:#888;">${m.timeUntilReset}</small>
+                                </div>
+                            </div>`;
+                        });
+                        html += '</div>';
+                    }
+                    document.getElementById('dashboardQuota').innerHTML = html || 'No quota info available.';
+                } else document.getElementById('dashboardQuota').innerHTML = 'Language Server not active.';
+            } catch(e) { document.getElementById('dashboardQuota').innerHTML = 'Error fetching quota.'; }
+
+            try {
+                const cRes = await fetch('/api/dashboard/cache');
+                if (cRes.ok) {
+                    const cData = await cRes.json();
+                    document.getElementById('dashboardCache').innerHTML = `
+                        <div style="background:#2a2a2a; padding:16px; border-radius:8px;">
+                            <p style="font-size:24px; font-weight:bold; color:white; margin-bottom:12px;">${cData.totalSizeHr}</p>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                                <span style="color:#aaa;">Brain Tasks (${cData.brainCount})</span>
+                                <span style="color:white;">${cData.brainSizeHr}</span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between;">
+                                <span style="color:#aaa;">Conversations (${cData.conversationsCount})</span>
+                                <span style="color:white;">${cData.conversationsSizeHr}</span>
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch(e) {}
+        }
 
         function connect() {
             ws = new WebSocket(`ws://${location.host}`);
@@ -179,8 +314,19 @@
         }
 
         function renderTabs() {
-            tabsContainer.innerHTML = cascades.map(c => `
-                <div class="cascade-tab ${c.id === currentCascadeId ? 'active' : ''} ${c.active ? 'active-window' : ''}" 
+            const dashboardTab = document.querySelector('.dashboard-control');
+            if (isDashboardOpen) {
+                dashboardTab.style.background = '#3b82f6';
+                dashboardTab.style.opacity = '1';
+                dashboardTab.style.borderBottom = '2px solid white';
+            } else {
+                dashboardTab.style.background = '#4b5563';
+                dashboardTab.style.opacity = '0.8';
+                dashboardTab.style.borderBottom = 'none';
+            }
+
+            dynamicTabs.innerHTML = cascades.map(c => `
+                <div class="cascade-tab ${c.id === currentCascadeId && !isDashboardOpen ? 'active' : ''} ${c.active ? 'active-window' : ''}" 
                      onclick="selectCascade('${c.id}')">
                     <div class="status"></div>
                     ${c.title || 'Untitled'}
@@ -188,11 +334,12 @@
             `).join('');
 
             if (cascades.length === 0) {
-                tabsContainer.innerHTML = '<div class="cascade-tab">No chats found</div>';
+                dynamicTabs.innerHTML = '<div class="cascade-tab">No chats found</div>';
             }
         }
 
         function selectCascade(id) {
+            if (isDashboardOpen) toggleDashboard();
             currentCascadeId = id;
             renderTabs();
             loadCascade(id);

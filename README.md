@@ -1,4 +1,4 @@
-# Antigravity Shit-Chat Mobile Monitor
+# Antigravity Shit-Chat Mobile Monitor & Toolkit
 
 Need to go to the bathroom? But Opus 4.5 might be done with that big task soon? Want to eat lunch? But there's more tokens left before they reset right after lunch?
 
@@ -6,6 +6,13 @@ Need to go to the bathroom? But Opus 4.5 might be done with that big task soon? 
 
 
 A real-time mobile interface for monitoring and interacting with Antigravity chat sessions. 
+
+## Integrated Toolkit (Dashboard & Auto-Accept)
+
+We have synthesized two external atomic features directly into this application. Both are implemented entirely natively inside this repo (no external dependencies, fully safe, independent, and audited for malicious code). 
+
+- **Auto-Accept Agent:** Automatically clicks "accept", "run", and "apply" prompts for the AI agent, allowing true hands-free operation. This is done by injecting a safe client-side script (`scripts/auto-accept.js`) directly into the IDE via CDP. Sourced directly from [antigravity-auto-accept](https://github.com/pesoszpesosz/antigravity-auto-accept).
+- **Quota & Cache Dashboard:** A new Dashboard tab displays your token allowances and local cache footprint in real time. The server uses local child processes and local APIs to securely fetch your quota without relying on external domains, mimicking the behavior of [antigravity-dashboard](https://github.com/nextcortex/antigravity-dashboard).
 
 ## How It Works
 
@@ -33,30 +40,43 @@ A lightweight web server provides the mobile UI:
 - Auto-refresh when new content appears
 - Send messages directly from your phone
 
-## Setup
+## Setup & Deployment
 
-### 1. Start Antigravity with CDP
+You can run this project locally, or install it globally as a command-line tool on your computer.
 
-Start Antigravity with Chrome DevTools Protocol enabled:
+### Recommended: 1-Step Global Install (from Git)
 
+To install this tool globally directly from the repository so you can run it anywhere:
+
+```bash
+npm install -g git+https://github.com/Taylor/Antigravity-Remote-Chat.git
+```
+*(Replace the URL with your actual remote repository URL when pushed)*
+
+Once installed, you can start the monitor from anywhere just by typing:
+```bash
+ag-monitor
+```
+
+### Manual Setup (Development)
+
+1. Start Antigravity with Chrome DevTools Protocol enabled:
 ```bash
 antigravity . --remote-debugging-port=9000
 ```
-(You will get this message: "Warning: 'remote-debugging-port' is not in the list of known options, but still passed to Electron/Chromium." that's fine)
+*(You will get this message: "Warning: 'remote-debugging-port' is not in the list of known options, but still passed to Electron/Chromium." that's fine)*
 
-### 2. Install Dependencies
-
+2. Clone and Install Dependencies
 ```bash
 npm install
 ```
 
-### 3. Start the Monitor
-
+3. Start the Monitor
 ```bash
-node server.js
+npm start
 ```
 
-### 4. Access from Mobile
+### Accessing the Dashboard
 
 Open your browser in the bathroom and navigate to:
 ```

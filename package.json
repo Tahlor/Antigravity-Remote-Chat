@@ -3,6 +3,9 @@
     "version": "1.0.0",
     "type": "module",
     "description": "Mobile web interface for monitoring Antigravity chat via visual snapshots",
+    "bin": {
+        "ag-monitor": "./server.js"
+    },
     "scripts": {
         "start": "node server.js",
         "dev": "node server.js"
